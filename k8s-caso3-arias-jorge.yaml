@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: arias-jorge-namespace
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arias-jorge-configmap
+  namespace: arias-jorge-namespace
+data:
+  app.log: |
+    Un texto de prueba lorem Ipsum
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: arias-jorge-secret
+  namespace: arias-jorge-namespace
+type: Opaque
+stringData:
+  apellido_paterno: Arias
+  apellido_materno: Tandaypan
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arias-jorge-deployment
+  namespace: arias-jorge-namespace
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: arias-jorge-scale-flask
+  template:
+    metadata:
+      labels:
+        app: arias-jorge-scale-flask
+    spec:
+      containers:
+        - name: scale-flask
+          image: jorgearias15/scale-flask:mod1
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - secretRef:
+                name: arias-jorge-secret
+          volumeMounts:
+            - name: log-config
+              mountPath: /var/log/scale-flask
+      volumes:
+        - name: log-config
+          configMap:
+            name: arias-jorge-configmap
+            items:
+              - key: app.log
+                path: app.log
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arias-jorge-service
+  namespace: arias-jorge-namespace
+spec:
+  type: LoadBalancer
+  selector:
+    app: arias-jorge-scale-flask
+  ports:
+    - port: 80
+      targetPort: 5000
+      protocol: TCP
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: arias-jorge-cronjob
+  namespace: arias-jorge-namespace
+spec:
+  schedule: "*/4 * * * *"  # cada 4 minutos
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: curl-lb
+              image: curlimages/curl:8.10.1
+              args:
+                - /bin/sh
+                - -c
+                # Dentro del clúster, el Service es alcanzable por DNS
+                - curl -sS http://arias-jorge-service:80 || echo "Error al llamar al LoadBalancer"
+          restartPolicy: OnFailure
